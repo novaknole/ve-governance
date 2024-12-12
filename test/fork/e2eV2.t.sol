@@ -22,6 +22,8 @@ import {Deploy, DeploymentParameters} from "script/Deploy.s.sol";
 
 interface IERC20Mint is IERC20 {
     function mint(address _to, uint256 _amount) external;
+
+    function updateTransferWhitelist(address _account, bool _add) external;
 }
 
 contract GhettoMultisig {
@@ -1434,6 +1436,17 @@ contract TestE2EV2 is Test, IWithdrawalQueueErrors, IGaugeVote, IEscrowCurveToke
         if (whale == address(0)) {
             return false;
         }
+
+        address xKIMOwner = address(0x6f1130E4b96C681e2721667DDfFcA99dD6824a2d);
+
+        vm.startPrank(xKIMOwner);
+        {
+            token.updateTransferWhitelist(whale, true);
+            token.updateTransferWhitelist(distributor, true);
+            token.updateTransferWhitelist(address(escrow), true);
+            token.updateTransferWhitelist(address(queue), true);
+        }
+        vm.stopPrank();
 
         vm.prank(whale);
         token.transfer(address(distributor), 3_000 ether);
