@@ -5,6 +5,7 @@ import {console2 as console} from "forge-std/console2.sol";
 
 import {IDAO} from "@aragon/osx/core/dao/IDAO.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {DAO} from "@aragon/osx/core/dao/DAO.sol";
 import {Multisig, MultisigSetup} from "@aragon/multisig/MultisigSetup.sol";
 import {UUPSUpgradeable as UUPS} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -24,6 +25,14 @@ interface IERC20Mint is IERC20 {
     function mint(address _to, uint256 _amount) external;
 
     function updateTransferWhitelist(address _account, bool _add) external;
+}
+
+interface NFT721Position is IERC721 {
+    function withdrawFromPosition(uint256 _tokenId, uint256 amountToWithdraw) external;
+
+    function createPosition(uint256 _amount, uint256 _lockDuration) external;
+
+    function lastTokenId() external view returns (uint256);
 }
 
 contract GhettoMultisig {
@@ -1437,14 +1446,29 @@ contract TestE2EV2 is Test, IWithdrawalQueueErrors, IGaugeVote, IEscrowCurveToke
             return false;
         }
 
-        address xKIMOwner = address(0x6f1130E4b96C681e2721667DDfFcA99dD6824a2d);
+        // NFT token 0x2548255dcedFA9C1cB87ca2a645A1CB88FB66ac0
+        NFT721Position nftPosition = NFT721Position(0x2548255dcedFA9C1cB87ca2a645A1CB88FB66ac0);
 
-        vm.startPrank(xKIMOwner);
+        uint256 lpAmount = 3_000 ether;
+        uint256 lpTokenId = 86;
+
+        vm.startPrank(whale);
         {
-            token.updateTransferWhitelist(whale, true);
-            token.updateTransferWhitelist(distributor, true);
-            token.updateTransferWhitelist(address(escrow), true);
-            token.updateTransferWhitelist(address(queue), true);
+            // Carlos is poor
+            assertEq(token.balanceOf(whale), 0);
+            nftPosition.withdrawFromPosition(lpTokenId, lpAmount);
+
+            // Carlos is rich but he hates money
+            assertEq(token.balanceOf(whale), lpAmount);
+            token.approve(address(nftPosition), lpAmount);
+            nftPosition.createPosition(lpAmount, 0);
+            // Carlos is poor again
+            assertEq(token.balanceOf(whale), 0);
+
+            // Just kidding, Carlos wants a Lambo and a Fiat500
+            uint256 lastTokenId = nftPosition.lastTokenId();
+            nftPosition.withdrawFromPosition(lastTokenId, lpAmount);
+            assertEq(token.balanceOf(whale), lpAmount);
         }
         vm.stopPrank();
 
