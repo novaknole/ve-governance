@@ -30,15 +30,17 @@ contract TestDowngradeViaMultisig is Test {
     SimpleGaugeVoter voterMode;
     SimpleGaugeVoter voterBPT;
 
-    address lockModeImplOld = address(0x643561CAe8F05f449dC30C3cE52E253e81d75340);
-    address lockBPTImplOld = address(0x643561CAe8F05f449dC30C3cE52E253e81d75340);
-    address voterModeImplOld = address(0x2f21661f0EE08e5397e2e734fB162E8871a5F765);
-    address voterBPTImplOld = address(0x2f21661f0EE08e5397e2e734fB162E8871a5F765);
+    address lockModeImplOldMainnet = address(0x643561CAe8F05f449dC30C3cE52E253e81d75340);
+    address voterModeImplOldMainnet = address(0x2f21661f0EE08e5397e2e734fB162E8871a5F765);
+
+    address lockModeImplOldSepolia = address(0x30Bb9FdcE174Fe52f3bfF881A328a1A319ceC2C7);
+    address voterModeImplOldSepolia = address(0xd015A5e363299dCC6De4429487C667f098E0A2ad);
 
     address[] aragonSigners;
     address[] modeSigners;
 
-    MockERC20 token = MockERC20(0xDfc7C877a950e49D2610114102175A06C2e3167a);
+    MockERC20 modeToken = MockERC20(0xDfc7C877a950e49D2610114102175A06C2e3167a);
+    MockERC20 bptToken = MockERC20(0x7c86a44778c52a0AAD17860924b53bf3f35Dc932);
     error OnlyEscrow();
     error NotWhitelisted();
 
@@ -57,13 +59,6 @@ contract TestDowngradeViaMultisig is Test {
         for (uint256 i = 0; i < signers.length; i++) {
             modeSigners.push(signers[i]);
         }
-    }
-
-    // hardcoded staker, may or may not be voting at block
-    function getStaker(string memory _network) public view returns (address staker) {
-        if (isMainnet(_network)) return 0xE28842dAF2cDe94EecC81b26A436eB043454F010;
-        else if (isTestnet(_network)) return 0x8bF0280B2557B98532EC21e6c070Dba1bFAaDbf2;
-        else revert("Invalid network");
     }
 
     function readMultisigMembers() public view returns (address[] memory result) {
@@ -96,6 +91,21 @@ contract TestDowngradeViaMultisig is Test {
         voterBPT = bptPluginSet.plugin;
     }
 
+    struct Implementations {
+        address lock;
+        address voter;
+    }
+    function getImplementations() public view returns (Implementations memory) {
+        string memory network = vm.envString("NETWORK");
+        if (isMainnet(network)) {
+            return Implementations({lock: lockModeImplOldMainnet, voter: voterModeImplOldMainnet});
+        } else if (isTestnet(network)) {
+            return Implementations({lock: lockModeImplOldSepolia, voter: voterModeImplOldSepolia});
+        } else {
+            revert("Invalid network");
+        }
+    }
+
     function testDowngrade() public {
         setModeSigners();
         setAragonSigners();
@@ -103,7 +113,8 @@ contract TestDowngradeViaMultisig is Test {
         _retrieveDeployment(vm.envAddress("FACTORY_ADDRESS"));
         string memory network = vm.envString("NETWORK");
 
-        testBeforeDowngrade();
+        testBeforeDowngradeMode();
+        testBeforeDowngradeBPT();
 
         uint proposalId;
         IDAO.Action[] memory actions = buildActions();
@@ -128,16 +139,18 @@ contract TestDowngradeViaMultisig is Test {
 
         _signExecuteMultisigProposal(proposalId, modeSigners, modeMultisig);
 
-        testAfterDowngrade();
+        testAfterDowngradeMode();
+        testAfterDowngradeBPT();
     }
-    function testBeforeDowngrade() public {
+
+    function testBeforeDowngradeMode() public {
         // staked and voting
         address staked = address(0xE28842dAF2cDe94EecC81b26A436eB043454F010);
         uint stakedNFT = 21453;
         address modeHolder = address(0x57bc397F100a376F33567Bb69E8E4F1d4552F81E);
         address exiting = address(0x8A0c098e896fa309828A35Ce714403D23cBBCf3A);
         uint modeHolderNFT;
-        uint modeBalance = token.balanceOf(modeHolder);
+        uint modeBalance = modeToken.balanceOf(modeHolder);
         uint exitingNFT = 25841;
 
         Lock nftLock = lockMode;
@@ -151,7 +164,7 @@ contract TestDowngradeViaMultisig is Test {
         // mode holder cant create lock
         vm.startPrank(modeHolder);
         {
-            token.approve(address(escrow), modeBalance);
+            modeToken.approve(address(escrow), modeBalance);
             vm.expectRevert(OnlyEscrow.selector);
             escrow.createLock(modeBalance);
         }
@@ -175,14 +188,14 @@ contract TestDowngradeViaMultisig is Test {
         vm.stopPrank();
     }
 
-    function testAfterDowngrade() public {
+    function testAfterDowngradeMode() public {
         // staked and voting
         address staked = address(0xE28842dAF2cDe94EecC81b26A436eB043454F010);
         uint stakedNFT = 21453;
         address modeHolder = address(0x57bc397F100a376F33567Bb69E8E4F1d4552F81E);
         address exiting = address(0x8A0c098e896fa309828A35Ce714403D23cBBCf3A);
         uint modeHolderNFT;
-        uint modeBalance = token.balanceOf(modeHolder);
+        uint modeBalance = modeToken.balanceOf(modeHolder);
         uint exitingNFT = 25841;
 
         Lock nftLock = lockMode;
@@ -194,10 +207,12 @@ contract TestDowngradeViaMultisig is Test {
         // mode holder can create lock
         vm.startPrank(modeHolder);
         {
-            token.approve(address(escrow), modeBalance);
+            modeToken.approve(address(escrow), modeBalance);
             modeHolderNFT = escrow.createLock(modeBalance);
         }
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 weeks);
 
         // staked can begin withdraw
         vm.startPrank(staked);
@@ -239,6 +254,115 @@ contract TestDowngradeViaMultisig is Test {
         vm.stopPrank();
     }
 
+    function testBeforeDowngradeBPT() public {
+        // staked and voting
+        address staked = address(0x8bF1e340055c7dE62F11229A149d3A1918de3d74);
+        uint stakedNFT = 1;
+        address bptHolder = address(0xA7293dfaFBb1698Bab60b2E66F45fB1A0791d46D);
+        address exiting = address(0x059F4c04295bde54893C24025d8229E35318d3Cc);
+        uint bptHolderNFT;
+        uint bptBalance = bptToken.balanceOf(bptHolder);
+        uint exitingNFT = 239;
+
+        Lock nftLock = lockBPT;
+        VotingEscrow escrow = bptPluginSet.votingEscrow;
+
+        console.log("escrow in lock", address(nftLock.escrow()));
+        console.log("escrow whitelisted", nftLock.whitelisted(address(escrow)));
+
+        vm.warp(block.timestamp + 1 weeks);
+
+        // mode holder cant create lock
+        vm.startPrank(bptHolder);
+        {
+            bptToken.approve(address(escrow), bptBalance);
+            vm.expectRevert(OnlyEscrow.selector);
+            escrow.createLock(bptBalance);
+        }
+        vm.stopPrank();
+
+        // staked can't begin withdraw
+        vm.startPrank(staked);
+        {
+            nftLock.approve(address(escrow), stakedNFT);
+            vm.expectRevert(NotWhitelisted.selector);
+            escrow.resetVotesAndBeginWithdrawal(stakedNFT);
+        }
+        vm.stopPrank();
+
+        // exiting cant exit
+        vm.startPrank(exiting);
+        {
+            vm.expectRevert(OnlyEscrow.selector);
+            escrow.withdraw(exitingNFT);
+        }
+        vm.stopPrank();
+    }
+
+    function testAfterDowngradeBPT() public {
+        // staked and voting
+        address staked = address(0x8bF1e340055c7dE62F11229A149d3A1918de3d74);
+        uint stakedNFT = 1;
+        address bptHolder = address(0xA7293dfaFBb1698Bab60b2E66F45fB1A0791d46D);
+        address exiting = address(0x059F4c04295bde54893C24025d8229E35318d3Cc);
+        uint bptHolderNFT;
+        uint bptBalance = bptToken.balanceOf(bptHolder);
+        uint exitingNFT = 239;
+
+        Lock nftLock = lockBPT;
+        VotingEscrow escrow = bptPluginSet.votingEscrow;
+
+        console.log("escrow in lock", address(nftLock.escrow()));
+        console.log("escrow whitelisted", nftLock.whitelisted(address(escrow)));
+
+        // mode holder can create lock
+        vm.startPrank(bptHolder);
+        {
+            bptToken.approve(address(escrow), bptBalance);
+            bptHolderNFT = escrow.createLock(bptBalance);
+        }
+        vm.stopPrank();
+
+        // staked can begin withdraw
+        vm.startPrank(staked);
+        {
+            nftLock.approve(address(escrow), stakedNFT);
+            escrow.resetVotesAndBeginWithdrawal(stakedNFT);
+        }
+        vm.stopPrank();
+
+        // exiting can exit
+        vm.startPrank(exiting);
+        {
+            escrow.withdraw(exitingNFT);
+        }
+        vm.stopPrank();
+
+        // flow through rest of lifecycle
+        vm.warp(block.timestamp + 1 weeks);
+
+        vm.startPrank(staked);
+        {
+            escrow.withdraw(stakedNFT);
+        }
+        vm.stopPrank();
+
+        vm.startPrank(bptHolder);
+        {
+            nftLock.approve(address(escrow), bptHolderNFT);
+            escrow.beginWithdrawal(bptHolderNFT);
+        }
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 weeks);
+
+        vm.startPrank(bptHolder);
+        {
+            escrow.withdraw(bptHolderNFT);
+        }
+        vm.stopPrank();
+    }
+
     function _createAragonMsigProposal(
         IDAO.Action[] memory _actions
     ) internal returns (uint256 proposalId) {
@@ -270,30 +394,31 @@ contract TestDowngradeViaMultisig is Test {
     }
 
     function buildActions() internal returns (IDAO.Action[] memory) {
+        Implementations memory impls = getImplementations();
         // action 2: upgradeTo
         IDAO.Action[] memory actions = new IDAO.Action[](4);
         actions[0] = IDAO.Action({
             to: address(lockMode),
             value: 0,
-            data: abi.encodeCall(lockMode.upgradeTo, (lockModeImplOld))
+            data: abi.encodeCall(lockMode.upgradeTo, (impls.lock))
         });
 
         actions[1] = IDAO.Action({
             to: address(voterMode),
             value: 0,
-            data: abi.encodeCall(voterMode.upgradeTo, (voterModeImplOld))
+            data: abi.encodeCall(voterMode.upgradeTo, (impls.voter))
         });
 
         actions[2] = IDAO.Action({
             to: address(lockBPT),
             value: 0,
-            data: abi.encodeCall(lockBPT.upgradeTo, (lockBPTImplOld))
+            data: abi.encodeCall(lockBPT.upgradeTo, (impls.lock))
         });
 
         actions[3] = IDAO.Action({
             to: address(voterBPT),
             value: 0,
-            data: abi.encodeCall(voterBPT.upgradeTo, (voterBPTImplOld))
+            data: abi.encodeCall(voterBPT.upgradeTo, (impls.voter))
         });
 
         return actions;

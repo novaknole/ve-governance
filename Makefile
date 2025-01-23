@@ -126,4 +126,15 @@ test-downgradefork :; forge test --match-test testDowngrade \
 	--fork-block-number 18747666 \
 	-vvvv
 
+downgrade-preview-mode-sepolia :; export TRY_EXECUTE=true && forge script DowngradeToV100 \
+	--rpc-url https://sepolia.mode.network \
+	--private-key $(DEPLOYMENT_PRIVATE_KEY) \
+	-vvvvv
+
+downgrade-mode-sepolia :; export TRY_EXECUTE=true && forge script DowngradeToV100 \
+	--rpc-url https://sepolia.mode.network \
+	--private-key $(DEPLOYMENT_PRIVATE_KEY) \
+	--broadcast \
+	-vvvvv
+
 
