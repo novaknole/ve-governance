@@ -115,3 +115,15 @@ deploy-mode :; forge script script/Deploy.s.sol:Deploy \
 	--verify \
 	--etherscan-api-key $(ETHERSCAN_API_KEY) \
 	-vvv
+
+test-fix :; forge test --match-test testItWorksOnAFork \
+	--rpc-url https://mainnet.mode.network \
+	--fork-block-number 18747666 \
+	-w -vvvv
+
+test-downgradefork :; forge test --match-test testDowngrade \
+	--rpc-url https://mainnet.mode.network \
+	--fork-block-number 18747666 \
+	-vvvv
+
+
