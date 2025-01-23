@@ -107,7 +107,7 @@ contract LockTestFixFork is
         }
         vm.stopPrank();
 
-        // downgrade the contract to the non fucked up one
+        // downgrade the contract
         Lock impl = Lock(0x643561CAe8F05f449dC30C3cE52E253e81d75340);
         assertEq(address(nftLock.dao()), address(escrow.dao()));
         vm.startPrank(address(nftLock.dao()));

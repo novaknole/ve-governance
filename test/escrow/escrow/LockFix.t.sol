@@ -103,7 +103,7 @@ contract LockTestFix is
 
         vm.warp(block.timestamp + 10 days);
 
-        // upgrade the contract to the fucked up one
+        // upgrade the contract
         LockNew newImpl = new LockNew();
         nftLock.upgradeTo(address(newImpl));
 
@@ -151,7 +151,7 @@ contract LockTestFix is
         console.log("escrow in lock", address(nftLock.escrow()));
         console.log("escrow whitelisted", nftLock.whitelisted(address(escrow)));
 
-        // downgrade the contract to the non fucked up one
+        // downgrade the contract
         Lock impl = new Lock();
         nftLock.upgradeTo(address(impl));
 

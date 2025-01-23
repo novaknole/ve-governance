@@ -14,7 +14,6 @@ contract DowngradeToV100 is Script, TestDowngradeViaMultisig {
         setModeSigners();
 
         address signer = vm.envAddress("SIGNER_ADDRESS");
-        bool tryExecute = vm.envBool("TRY_EXECUTE");
         string memory network = vm.envString("NETWORK");
         _retrieveDeployment(vm.envAddress("FACTORY_ADDRESS"));
 
