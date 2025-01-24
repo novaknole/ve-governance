@@ -45,7 +45,7 @@ contract TestDowngradeViaMultisig is Test {
     error NotWhitelisted();
 
     // metadata for the proposal, pinned to pinata
-    bytes ipfsURI = bytes("ipfs://bafkreifbolvifin7oomrsdxnf6nej46mwka6oh3yon4yxdwkpdq7ku62wq");
+    bytes ipfsURI = bytes("ipfs://bafkreigm5fizmcluvnu6riqudmsdbypprg5f2gqpvoi6mm6mp7o2iwyvwa");
 
     function setAragonSigners() internal {
         aragonSigners.push(address(0x946138B088524414EEDaf0699BA10d7Fb5673A34));

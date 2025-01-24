@@ -137,4 +137,15 @@ downgrade-mode-sepolia :; export TRY_EXECUTE=true && forge script DowngradeToV10
 	--broadcast \
 	-vvvvv
 
+downgrade-preview-mode :; export TRY_EXECUTE=false && forge script DowngradeToV100 \
+	--rpc-url https://mainnet.mode.network \
+	--private-key $(DEPLOYMENT_PRIVATE_KEY) \
+	-vvvvv
+
+downgrade-mode :; export TRY_EXECUTE=false && forge script DowngradeToV100 \
+	--rpc-url https://mainnet.mode.network \
+	--private-key $(DEPLOYMENT_PRIVATE_KEY) \
+	--broadcast \
+	-vvvvv
+
 
