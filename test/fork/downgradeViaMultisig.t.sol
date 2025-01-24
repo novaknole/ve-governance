@@ -95,6 +95,10 @@ contract TestDowngradeViaMultisig is Test {
         address lock;
         address voter;
     }
+    /**
+      address lockModeImplOldMainnet = address(0x643561CAe8F05f449dC30C3cE52E253e81d75340);
+      address voterModeImplOldMainnet = address(0x2f21661f0EE08e5397e2e734fB162E8871a5F765);
+    */
     function getImplementations() public view returns (Implementations memory) {
         string memory network = vm.envString("NETWORK");
         if (isMainnet(network)) {
@@ -113,9 +117,11 @@ contract TestDowngradeViaMultisig is Test {
         _retrieveDeployment(vm.envAddress("FACTORY_ADDRESS"));
         string memory network = vm.envString("NETWORK");
 
+        uint time = block.timestamp;
         testBeforeDowngradeMode();
         testBeforeDowngradeBPT();
 
+        vm.warp(time);
         uint proposalId;
         IDAO.Action[] memory actions = buildActions();
         if (isMainnet(network)) {
@@ -141,17 +147,60 @@ contract TestDowngradeViaMultisig is Test {
 
         testAfterDowngradeMode();
         testAfterDowngradeBPT();
+        //
+        // testVotingContract(voterMode, 0x8bF1e340055c7dE62F11229A149d3A1918de3d74);
+        // testVotingContract(voterBPT, 0x8bF1e340055c7dE62F11229A149d3A1918de3d74);
+    }
+
+    function testVotingContract(SimpleGaugeVoter _voter, address _staker) public {
+        uint tokenId = VotingEscrow(_voter.escrow()).ownedTokens(_staker)[0];
+        // check when voting window opens and current epoch
+
+        IGaugeVote.GaugeVote[] memory votes = new IGaugeVote.GaugeVote[](1);
+        votes[0] = IGaugeVote.GaugeVote({
+            weight: 1,
+            gauge: 0x0887960159E0863D85B3b1B2eDD6A2eC0Ef687Fa
+        });
+
+        assertEq(_voter.epochId(), 1436);
+        assertEq(_voter.votingActive(), false);
+        assertEq(_voter.isVoting(tokenId), true);
+        // cant vote if window not open
+
+        vm.startPrank(_staker);
+        {
+            vm.expectRevert();
+            _voter.vote(tokenId, votes);
+            // cannot leave if window not open and voting
+            vm.expectRevert();
+            _voter.reset(tokenId);
+        }
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 weeks);
+        // can vote if window open
+        vm.startPrank(_staker);
+        {
+            _voter.reset(tokenId);
+            assertEq(_voter.isVoting(tokenId), false);
+            _voter.vote(tokenId, votes);
+            assertEq(_voter.isVoting(tokenId), true);
+        }
+        vm.stopPrank();
+
+        // vm.warp(block.timestamp + 1 weeks);
     }
 
     function testBeforeDowngradeMode() public {
-        // staked and voting
         address staked = address(0xE28842dAF2cDe94EecC81b26A436eB043454F010);
-        uint stakedNFT = 21453;
         address modeHolder = address(0x57bc397F100a376F33567Bb69E8E4F1d4552F81E);
         address exiting = address(0x8A0c098e896fa309828A35Ce714403D23cBBCf3A);
+
+        uint stakedNFT = 21453;
         uint modeHolderNFT;
-        uint modeBalance = modeToken.balanceOf(modeHolder);
         uint exitingNFT = 25841;
+
+        uint modeBalance = modeToken.balanceOf(modeHolder);
 
         Lock nftLock = lockMode;
         VotingEscrow escrow = modePluginSet.votingEscrow;

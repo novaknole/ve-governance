@@ -123,7 +123,7 @@ test-fix :; forge test --match-test testItWorksOnAFork \
 
 test-downgradefork :; forge test --match-test testDowngrade \
 	--rpc-url https://mainnet.mode.network \
-	--fork-block-number 18747666 \
+	--fork-block-number 18770277 \
 	-vvvv
 
 downgrade-preview-mode-sepolia :; export TRY_EXECUTE=true && forge script DowngradeToV100 \
