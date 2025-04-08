@@ -45,8 +45,6 @@ contract DelegationMapper is
     mapping(address => uint) public numberOfDelegatedTokens;
     mapping(address => bool) public autoDelegationEnabled;
 
-    int256 private sharedLinearCoefficient;
-    int256 private sharedConstantCoefficient;
     uint256 private maxTime;
 
     /*///////////////////////////////////////////////////////////////
@@ -429,15 +427,7 @@ contract DelegationMapper is
         elapsed = elapsed > maxTime ? maxTime : elapsed;
 
         int256 amount = uint256(_locked.amount).toInt256();
-
-        // TODO: Probably better if we could get this constants by calling the contract.
-        // The reasoning is delegationMapper might not be useful for some clients in the beginning,
-        // but might become useful later on. But when the time comes that we decide to deploy this for them,
-        // curveconstant coefficients might have changed and this could result in a problem.
-        // Clearly, this delegationMapper only expects `escrow` address in `initialize`, but those functions
-        // that return constant coefficients live inside curve. Passing `curve` address just for this reason
-        // is ideal ? even if we do so, we also have to make the functions public (see curve).
-
+        
         int256 slope = amount * CurveConstantLib.SHARED_LINEAR_COEFFICIENT;
         int256 bias = slope *
             int256(elapsed) +

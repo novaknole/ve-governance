@@ -58,15 +58,15 @@ contract LinearIncreasingEscrow is
     //////////////////////////////////////////////////////////////*/
 
     /// @dev precomputed coefficients of the quadratic curve
-    int256 private constant SHARED_QUADRATIC_COEFFICIENT =
+    int256 public constant SHARED_QUADRATIC_COEFFICIENT =
         CurveConstantLib.SHARED_QUADRATIC_COEFFICIENT;
 
-    int256 private constant SHARED_LINEAR_COEFFICIENT = CurveConstantLib.SHARED_LINEAR_COEFFICIENT;
+    int256 public constant SHARED_LINEAR_COEFFICIENT = CurveConstantLib.SHARED_LINEAR_COEFFICIENT;
 
-    int256 private constant SHARED_CONSTANT_COEFFICIENT =
+    int256 public constant SHARED_CONSTANT_COEFFICIENT =
         CurveConstantLib.SHARED_CONSTANT_COEFFICIENT;
 
-    uint256 private constant MAX_EPOCHS = CurveConstantLib.MAX_EPOCHS;
+    uint256 public constant MAX_EPOCHS = CurveConstantLib.MAX_EPOCHS;
 
     /*//////////////////////////////////////////////////////////////
                             ADDED: TOTAL SUPPLY
