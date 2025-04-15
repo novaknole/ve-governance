@@ -12,19 +12,11 @@ import {IERC721EnumerableMintableBurnable as IERC721EMB} from "@lock/IERC721EMB.
 
 // veGovernance
 import {IDAO} from "@aragon/osx/core/dao/IDAO.sol";
-import {IAddressGaugeVoter} from "@voting/IAddressGaugeVoter.sol";
-import {
-    IEscrowCurveIncreasingV1_2_0 as IEscrowCurve
-} from "@curve/IEscrowCurveIncreasing_v1_2_0.sol";
+import {ITokenGaugeVoter} from "@voting/ITokenGaugeVoter.sol";
+import {IClock} from "@clock/IClock.sol";
+import {IEscrowCurveIncreasing as IEscrowCurve} from "@curve/IEscrowCurveIncreasing.sol";
 import {IExitQueue} from "@queue/IExitQueue.sol";
-import {
-    IVotingEscrowIncreasingV1_2_0 as IVotingEscrow,
-    IVotingEscrowExiting,
-    IMerge,
-    ISplit
-} from "./IVotingEscrowIncreasing_v1_2_0.sol";
-import {IClockV1_2_0 as IClock} from "@clock/IClock_v1_2_0.sol";
-import {ExitQueue} from "@queue/ExitQueue.sol";
+import {IVotingEscrowIncreasing as IVotingEscrow} from "./IVotingEscrowIncreasing.sol";
 
 // libraries
 import {
@@ -45,13 +37,8 @@ import {
 import {
     DaoAuthorizableUpgradeable as DaoAuthorizable
 } from "@aragon/osx/core/plugin/dao-authorizable/DaoAuthorizableUpgradeable.sol";
-import {
-    IDelegateMoveVote,
-    IDelegateUpdateVotingPower,
-    IEscrowIVotesAdapter
-} from "../delegation/IEscrowIVotesAdapter.sol";
 
-contract VotingEscrowV1_2_0 is
+contract VotingEscrow is
     IVotingEscrow,
     ReentrancyGuard,
     Pausable,
@@ -69,10 +56,6 @@ contract VotingEscrowV1_2_0 is
 
     /// @notice Role required to withdraw underlying tokens from the contract
     bytes32 public constant SWEEPER_ROLE = keccak256("SWEEPER");
-
-    /// @dev enables splits without whitelisting
-    address public constant SPLIT_WHITELIST_ANY_ADDRESS =
-        address(uint160(uint256(keccak256("SPLIT_WHITELIST_ANY_ADDRESS"))));
 
     /*//////////////////////////////////////////////////////////////
                               NFT Data
@@ -120,21 +103,9 @@ contract VotingEscrowV1_2_0 is
     bool private _lockNFTSet;
 
     /*//////////////////////////////////////////////////////////////
-                            ADDED: in 1.2.0
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Whitelisted contracts that are allowed to split
-    mapping(address => bool) public splitWhitelisted;
-
-    address public ivotesAdapter;
-
-    error UpgradeNotPossible();
-
-    /*//////////////////////////////////////////////////////////////
                               Initialization
     //////////////////////////////////////////////////////////////*/
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
@@ -159,11 +130,6 @@ contract VotingEscrowV1_2_0 is
     /*//////////////////////////////////////////////////////////////
                               Admin Setters
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Added in 1.2.0 to set the ivotes adapter
-    function setIVotesAdapter(address _ivotesAdapter) external auth(ESCROW_ADMIN_ROLE) {
-        ivotesAdapter = _ivotesAdapter;
-    }
 
     /// @notice Sets the curve contract that calculates the voting power
     function setCurve(address _curve) external auth(ESCROW_ADMIN_ROLE) {
@@ -207,26 +173,11 @@ contract VotingEscrowV1_2_0 is
         emit MinDepositSet(_minDeposit);
     }
 
-    /// @notice Split disabled by default, only whitelisted addresses can split.
-    function setEnableSplit(
-        address _account,
-        bool _isWhitelisted
-    ) external auth(ESCROW_ADMIN_ROLE) {
-        splitWhitelisted[_account] = _isWhitelisted;
-        emit SplitWhitelistSet(_account, _isWhitelisted);
-    }
-
-    /// @notice Enable split to any address without whitelisting
-    function enableSplit() external auth(ESCROW_ADMIN_ROLE) {
-        splitWhitelisted[SPLIT_WHITELIST_ANY_ADDRESS] = true;
-        emit SplitWhitelistSet(SPLIT_WHITELIST_ANY_ADDRESS, true);
-    }
-
     /*//////////////////////////////////////////////////////////////
                       Getters: ERC721 Functions
     //////////////////////////////////////////////////////////////*/
 
-    function isApprovedOrOwner(address _spender, uint256 _tokenId) public view returns (bool) {
+    function isApprovedOrOwner(address _spender, uint256 _tokenId) external view returns (bool) {
         return IERC721EMB(lockNFT).isApprovedOrOwner(_spender, _tokenId);
     }
 
@@ -270,7 +221,7 @@ contract VotingEscrowV1_2_0 is
     }
 
     /// @return The details of the underlying lock for a given veNFT
-    function locked(uint256 _tokenId) public view returns (LockedBalance memory) {
+    function locked(uint256 _tokenId) external view returns (LockedBalance memory) {
         return _locked[_tokenId];
     }
 
@@ -289,13 +240,7 @@ contract VotingEscrowV1_2_0 is
 
     /// @notice Checks if the NFT is currently voting. We require the user to reset their votes if so.
     function isVoting(uint256 _tokenId) public view returns (bool) {
-        bool isTokenDelegated = IEscrowIVotesAdapter(ivotesAdapter).tokenIsDelegated(_tokenId);
-        if (!isTokenDelegated) return false;
-
-        address owner = IERC721EMB(lockNFT).ownerOf(_tokenId);
-        address delegatee = IEscrowIVotesAdapter(ivotesAdapter).delegates(owner);
-
-        return IAddressGaugeVoter(voter).isVoting(delegatee);
+        return ITokenGaugeVoter(voter).isVoting(_tokenId);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -322,7 +267,7 @@ contract VotingEscrowV1_2_0 is
         if (_value < minDeposit) revert AmountTooSmall();
 
         // query the duration lib to get the next time we can deposit
-        uint256 startTime = IClock(clock).epochPrevCheckpointTs();
+        uint256 startTime = IClock(clock).epochNextCheckpointTs();
 
         // increment the total locked supply and get the new tokenId
         totalLocked += _value;
@@ -333,7 +278,7 @@ contract VotingEscrowV1_2_0 is
         _locked[newTokenId] = lock;
 
         // we don't allow edits in this implementation, so only the new lock is used
-        _checkpoint(newTokenId, LockedBalance(0, 0), lock);
+        _checkpoint(newTokenId, lock);
 
         uint256 balanceBefore = IERC20(token).balanceOf(address(this));
 
@@ -351,157 +296,34 @@ contract VotingEscrowV1_2_0 is
         return newTokenId;
     }
 
-    /// @inheritdoc IMerge
-    function merge(uint256 _from, uint256 _to) public {
-        address sender = _msgSender();
-
-        if (!isApprovedOrOwner(sender, _from)) revert NotApprovedOrOwner();
-        if (!isApprovedOrOwner(sender, _to)) revert NotApprovedOrOwner();
-
-        if (_from == _to) revert SameNFT();
-
-        LockedBalance memory oldLockedFrom = _locked[_from];
-        LockedBalance memory oldLockedTo = _locked[_to];
-
-        if (!canMerge(oldLockedFrom, oldLockedTo)) {
-            revert CannotMerge(_from, _to);
-        }
-
-        // Note that this function must be called before we
-        // empty `lockedFrom`'s amount to 0. `moveDelegateVotes`
-        // relies that lock still contains the amount.
-        IEscrowIVotesAdapter(ivotesAdapter).moveDelegateVotes(
-            IERC721EMB(lockNFT).ownerOf(_from),
-            IERC721EMB(lockNFT).ownerOf(_to),
-            _from
-        );
-
-        // Update for `_from`.
-        IERC721EMB(lockNFT).burn(_from);
-        _locked[_from] = LockedBalance(0, 0);
-        LockedBalance memory newLockedFrom = LockedBalance(0, oldLockedFrom.start);
-
-        _checkpoint(_from, oldLockedFrom, newLockedFrom);
-
-        // Update for `_to`.
-        oldLockedFrom.start = oldLockedTo.start;
-        _checkpoint(_to, oldLockedTo, oldLockedFrom);
-
-        uint208 newLockedAmount = oldLockedFrom.amount + oldLockedTo.amount;
-
-        _locked[_to] = LockedBalance(newLockedAmount, oldLockedTo.start);
-
-        emit Merged(sender, _from, _to, oldLockedFrom.amount, oldLockedTo.amount, newLockedAmount);
-    }
-
-    /// @inheritdoc IMerge
-    function canMerge(
-        LockedBalance memory _fromLocked,
-        LockedBalance memory _toLocked
-    ) public view returns (bool) {
-        uint256 maxTime = IEscrowCurve(curve).maxTime();
-
-        uint256 fromLockedEnd = _fromLocked.start + maxTime;
-        uint256 toLockedEnd = _toLocked.start + maxTime;
-
-        // Tokens either must have the same start dates or both must be mature.
-        if (
-            (_toLocked.start != _fromLocked.start) &&
-            (toLockedEnd >= block.timestamp || fromLockedEnd >= block.timestamp)
-        ) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /// @inheritdoc ISplit
-    function split(
-        uint256 _from,
-        uint256 _value
-    ) public returns (uint256 _tokenId1, uint256 _tokenId2) {
-        address sender = _msgSender();
-
-        // Only allow split to whitelisted accounts.
-        if (!splitWhitelisted[SPLIT_WHITELIST_ANY_ADDRESS] && !splitWhitelisted[sender]) {
-            revert SplitNotWhitelisted();
-        }
-
-        LockedBalance memory locked_ = _locked[_from];
-
-        if (!isApprovedOrOwner(sender, _from)) revert NotApprovedOrOwner();
-
-        if (_value == 0) revert ZeroAmount();
-        if (locked_.amount <= _value) revert SplitAmountTooBig();
-
-        // Ensure that amounts of new tokens will be greater than `minDeposit`.
-        uint208 amount1 = locked_.amount - _value.toUint208();
-        uint208 amount2 = _value.toUint208();
-
-        if (amount1 < minDeposit || amount2 < minDeposit) {
-            revert AmountTooSmall();
-        }
-
-        IERC721EMB(lockNFT).burn(_from);
-        _locked[_from] = LockedBalance(0, 0);
-        _checkpoint(_from, locked_, LockedBalance(0, locked_.start));
-
-        locked_.amount = amount1;
-        _tokenId1 = _createSplitNFT(sender, locked_);
-
-        locked_.amount = amount2;
-        _tokenId2 = _createSplitNFT(sender, locked_);
-
-        emit Split(_from, _tokenId1, _tokenId2, sender, amount1, amount2);
-    }
-
-    /// @notice creates a new token in checkpoint and mint.
-    /// @param _to The address to which new token id will be minted
-    /// @param _newLocked New locked amount / start lock time for the new token
-    /// @return _tokenId The id of the newly created token.
-    function _createSplitNFT(
-        address _to,
-        LockedBalance memory _newLocked
-    ) private returns (uint256 _tokenId) {
-        _tokenId = ++lastLockId;
-        _locked[_tokenId] = _newLocked;
-        _checkpoint(_tokenId, LockedBalance(0, 0), _newLocked);
-        IERC721EMB(lockNFT).mint(_to, _tokenId);
-    }
-
     /// @notice Record per-user data to checkpoints. Used by VotingEscrow system.
-    /// @param _tokenId NFT token ID.
-    /// @dev Old locked balance is unused in the increasing case, at least in this implementation.
-    /// @param _fromLocked New locked amount / start lock time for the user
+    /// @param _tokenId NFT token ID
+    /// @dev Old locked balance is unused in the increasing case, at least in this implementation
     /// @param _newLocked New locked amount / start lock time for the user
-    function _checkpoint(
-        uint256 _tokenId,
-        LockedBalance memory _fromLocked,
-        LockedBalance memory _newLocked
-    ) private {
-        IEscrowCurve(curve).checkpoint(_tokenId, _fromLocked, _newLocked);
+    function _checkpoint(uint256 _tokenId, LockedBalance memory _newLocked) private {
+        IEscrowCurve(curve).checkpoint(_tokenId, LockedBalance(0, 0), _newLocked);
+    }
+
+    /// @dev resets the voting power for a given tokenId. Checkpoint is written to the end of the epoch.
+    /// @param _tokenId The tokenId to reset the voting power for
+    /// @dev We don't need to fetch the old locked balance as it's not used in this implementation
+    function _checkpointClear(uint256 _tokenId) private {
+        uint256 checkpointClearTime = IClock(clock).epochNextCheckpointTs();
+        IEscrowCurve(curve).checkpoint(
+            _tokenId,
+            LockedBalance(0, 0),
+            LockedBalance(0, checkpointClearTime.toUint48())
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
                         Exit and Withdraw Logic
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IVotingEscrowExiting
-    function currentExitingAmount() public view returns (uint256 total) {
-        IERC721EMB enumerable = IERC721EMB(lockNFT);
-        uint256 balance = enumerable.balanceOf(address(this));
-
-        for (uint256 i = 0; i < balance; i++) {
-            uint256 tokenId = enumerable.tokenOfOwnerByIndex(address(this), i);
-            total += locked(tokenId).amount;
-        }
-    }
-
     /// @notice Resets the votes and begins the withdrawal process for a given tokenId
     /// @dev Convenience function, the user must have authorized this contract to act on their behalf.
-    ///      For backwards compatibility, even though `reset` call to gauge voter has been removed,
-    ///      we still keep the function with the same name.
     function resetVotesAndBeginWithdrawal(uint256 _tokenId) external whenNotPaused {
+        ITokenGaugeVoter(voter).reset(_tokenId);
         beginWithdrawal(_tokenId);
     }
 
@@ -509,14 +331,16 @@ contract VotingEscrowV1_2_0 is
     /// @param _tokenId The tokenId to begin withdrawal for. Will be transferred to this contract before burning.
     /// @dev The user must not have active votes in the voter contract.
     function beginWithdrawal(uint256 _tokenId) public nonReentrant whenNotPaused {
+        // can't exit if you have votes pending
+        if (isVoting(_tokenId)) revert CannotExit();
+
         // in the event of an increasing curve, 0 voting power means voting isn't active
         if (votingPower(_tokenId) == 0) revert CannotExit();
 
         address owner = IERC721EMB(lockNFT).ownerOf(_tokenId);
 
         // we can remove the user's voting power as it's no longer locked
-        LockedBalance memory locked_ = _locked[_tokenId];
-        _checkpoint(_tokenId, locked_, LockedBalance(0, locked_.start));
+        _checkpointClear(_tokenId);
 
         // transfer NFT to this and queue the exit
         IERC721EMB(lockNFT).transferFrom(_msgSender(), address(this), _tokenId);
@@ -584,20 +408,6 @@ contract VotingEscrowV1_2_0 is
         emit SweepNFT(_to, _tokenId);
     }
 
-    /// @inheritdoc IDelegateMoveVote
-    function moveDelegateVotes(address _from, address _to, uint256 _tokenId) public {
-        if (msg.sender != lockNFT) revert OnlyLockNFT();
-
-        IEscrowIVotesAdapter(ivotesAdapter).moveDelegateVotes(_from, _to, _tokenId);
-    }
-
-    /// @inheritdoc IDelegateUpdateVotingPower
-    function updateVotingPower(address _from, address _to) public {
-        if (msg.sender != ivotesAdapter) revert OnlyIVotesAdapter();
-
-        IAddressGaugeVoter(voter).updateVotingPower(_from, _to);
-    }
-
     /*///////////////////////////////////////////////////////////////
                             UUPS Upgrade
     //////////////////////////////////////////////////////////////*/
@@ -612,9 +422,10 @@ contract VotingEscrowV1_2_0 is
     function _authorizeUpgrade(address) internal virtual override auth(ESCROW_ADMIN_ROLE) {}
 
     /// @dev Reserved storage space to allow for layout changes in the future.
-    ///      Please note that the reserved slot number in previous version(39) was set
-    ///      incorrectly as 39 instead of 40. Changing it to 40 now would overwrite existing slot values,
-    ///      resulting in the loss of state. Therefore, we will continue using 37 in this version.
-    ///      For future versions, any new variables should be added by subtracting from 37.
-    uint256[37] private __gap;
+    ///      Please note that the reserved slot number 39 was set incorrectly as 39 instead of 40.
+    ///      Changing it to 40 now would overwrite existing slot values, resulting in the loss of state.
+    ///      Therefore, we will continue using 39 in this version. For future versions, any new variables
+    ///      should be added by subtracting from 39 rather than 40. Essentially, it's as though we
+    ///      originally reserved 49 slots for this contract, instead of 50.
+    uint256[39] private __gap;
 }
