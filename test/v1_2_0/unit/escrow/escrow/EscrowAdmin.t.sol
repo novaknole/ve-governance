@@ -195,4 +195,35 @@ contract TestEscrowAdmin is EscrowBase {
         vm.expectRevert(ForbiddenWhitelistAddress.selector);
         nftLock.setWhitelisted(escrowAddr, false);
     }
+
+    function testSetAdapter(address _adapter) public {
+        escrow.setIVotesAdapter(_adapter);
+        assertEq(escrow.ivotesAdapter(), _adapter);
+
+        bytes memory err = _authErr(attacker, address(escrow), escrow.ESCROW_ADMIN_ROLE());
+        vm.prank(attacker);
+        vm.expectRevert(err);
+        escrow.setIVotesAdapter(_adapter);
+    }
+
+    function testSetSplit() public {
+        address splw = escrow.SPLIT_WHITELIST_ANY_ADDRESS();
+        assertFalse(escrow.splitWhitelisted(splw));
+
+        // reverts if attacker
+        bytes memory err = _authErr(attacker, address(escrow), escrow.ESCROW_ADMIN_ROLE());
+        vm.prank(attacker);
+        vm.expectRevert(err);
+        escrow.setEnableSplit(splw, true);
+
+        vm.prank(attacker);
+        vm.expectRevert(err);
+        escrow.enableSplit();
+
+        // set split
+        vm.expectEmit(true, false, false, true);
+        emit SplitWhitelistSet(splw, true);
+        escrow.setEnableSplit(splw, true);
+        assertTrue(escrow.splitWhitelisted(splw));
+    }
 }

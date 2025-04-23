@@ -287,7 +287,8 @@ contract VotingEscrowV1_2_0 is
         }
     }
 
-    /// @notice Checks if the NFT is currently voting. We require the user to reset their votes if so.
+    /// @notice Check if the token is currently voting.
+    /// @dev Requires the token to be delegated and the delegate is voting.
     function isVoting(uint256 _tokenId) public view returns (bool) {
         bool isTokenDelegated = IEscrowIVotesAdapter(ivotesAdapter).tokenIsDelegated(_tokenId);
         if (!isTokenDelegated) return false;
@@ -445,11 +446,7 @@ contract VotingEscrowV1_2_0 is
         // Note that this function must be called before we
         // empty `locked_`'s amount to 0. `moveDelegateVotes`
         // relies that lock still contains the amount.
-        _moveDelegateVotes(
-            IERC721EMB(lockNFT).ownerOf(_from),
-            address(0),
-            _from
-        );
+        _moveDelegateVotes(IERC721EMB(lockNFT).ownerOf(_from), address(0), _from);
 
         IERC721EMB(lockNFT).burn(_from);
         _locked[_from] = LockedBalance(0, 0);
